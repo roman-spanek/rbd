@@ -4,26 +4,42 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationInfo;
 import org.flywaydb.core.api.MigrationInfoService;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
 /**
  * Entry point for the Flyway PostgreSQL demo application.
  *
- * <p>Reads database connection details from environment variables or system
- * properties, then runs all pending Flyway migrations found under
- * {@code src/main/resources/db/migration}.
+ * <p>Database connection settings are read from {@code application.properties}
+ * on the classpath. Individual values can be overridden at runtime via
+ * system properties (higher priority) or environment variables (medium
+ * priority); the properties file provides the baseline defaults.
  *
- * <p>Environment variables / system properties:
+ * <p>Property keys in {@code application.properties}:
  * <ul>
- *   <li>{@code DB_URL}      – JDBC URL, e.g. {@code jdbc:postgresql://localhost:5432/mydb}</li>
- *   <li>{@code DB_USER}     – database username (default: {@code postgres})</li>
- *   <li>{@code DB_PASSWORD} – database password (default: empty string)</li>
+ *   <li>{@code db.url}      – JDBC URL, e.g. {@code jdbc:postgresql://localhost:5432/mydb}</li>
+ *   <li>{@code db.user}     – database username</li>
+ *   <li>{@code db.password} – database password</li>
  * </ul>
+ *
+ * <p>Override precedence (highest → lowest):
+ * <ol>
+ *   <li>JVM system property (e.g. {@code -Ddb.url=...})</li>
+ *   <li>Environment variable using the upper-snake-case key (e.g. {@code DB_URL})</li>
+ *   <li>Value in {@code application.properties}</li>
+ * </ol>
  */
 public class App {
 
+    static final String PROPERTIES_FILE = "application.properties";
+
     public static void main(String[] args) {
-        String url      = getConfig("DB_URL",      "jdbc:postgresql://localhost:5432/mydb");
-        String user     = getConfig("DB_USER",     "postgres");
-        String password = getConfig("DB_PASSWORD", "");
+        Properties props = loadProperties(PROPERTIES_FILE);
+
+        String url      = resolve("db.url",      "DB_URL",      props);
+        String user     = resolve("db.user",     "DB_USER",     props);
+        String password = resolve("db.password", "DB_PASSWORD", props);
 
         System.out.println("Connecting to: " + url);
         System.out.println("User          : " + user);
@@ -48,15 +64,44 @@ public class App {
     }
 
     /**
-     * Reads a value first from system properties, then from environment
-     * variables, falling back to {@code defaultValue}.
+     * Loads a {@link Properties} file from the classpath.
+     *
+     * @param filename classpath-relative filename
+     * @return loaded properties (may be empty if the file is not found)
      */
-    static String getConfig(String key, String defaultValue) {
-        String value = System.getProperty(key);
-        if (value == null || value.isEmpty()) {
-            value = System.getenv(key);
+    static Properties loadProperties(String filename) {
+        Properties props = new Properties();
+        try (InputStream in = App.class.getClassLoader().getResourceAsStream(filename)) {
+            if (in != null) {
+                props.load(in);
+            } else {
+                System.err.println("Warning: " + filename + " not found on classpath; using defaults.");
+            }
+        } catch (IOException e) {
+            System.err.println("Warning: could not read " + filename + ": " + e.getMessage());
         }
-        return (value != null && !value.isEmpty()) ? value : defaultValue;
+        return props;
+    }
+
+    /**
+     * Resolves a configuration value using the following precedence:
+     * <ol>
+     *   <li>JVM system property ({@code propKey})</li>
+     *   <li>Environment variable ({@code envKey})</li>
+     *   <li>Value in the supplied {@link Properties}</li>
+     *   <li>Empty string</li>
+     * </ol>
+     */
+    static String resolve(String propKey, String envKey, Properties fileProps) {
+        String value = System.getProperty(propKey);
+        if (value != null && !value.isEmpty()) {
+            return value;
+        }
+        value = System.getenv(envKey);
+        if (value != null && !value.isEmpty()) {
+            return value;
+        }
+        return fileProps.getProperty(propKey, "");
     }
 
     private static void printMigrationInfo(MigrationInfoService service) {
