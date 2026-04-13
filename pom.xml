@@ -94,4 +94,18 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>local</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <flyway.url>jdbc:postgresql://localhost:5432/mydb</flyway.url>
+                <flyway.user>postgres</flyway.user>
+                <flyway.password></flyway.password>
+            </properties>
+        </profile>
+    </profiles>
 </project>
